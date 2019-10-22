@@ -17,8 +17,8 @@
 
     <!-- 彩色日志格式 -->
     <property name="CONSOLE_LOG_PATTERN"
-              value="[${APP_NAME}:${ServerIP}:${ServerPort}] %clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%level){blue} %clr(${PID}){magenta} %clr([%thread]){orange} %clr(%logger){cyan} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}" />
-    <property name="CONSOLE_LOG_PATTERN_NO_COLOR" value="[${APP_NAME}:${ServerIP}:${ServerPort}] %d{yyyy-MM-dd HH:mm:ss.SSS} %level ${PID} [%thread] %logger %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}" />
+              value="[${APP_NAME}:${ServerIP}:${ServerPort}] %clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%level){blue} %clr(${PID}){magenta} %clr([%X{traceId}]){yellow} %clr([%thread]){orange} %clr(%logger){cyan} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}" />
+    <property name="CONSOLE_LOG_PATTERN_NO_COLOR" value="[${APP_NAME}:${ServerIP}:${ServerPort}] %d{yyyy-MM-dd HH:mm:ss.SSS} %level ${PID} [%X{traceId}] [%thread] %logger %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}" />
 
     <!-- 控制台日志 -->
     <appender name="StdoutAppender" class="ch.qos.logback.core.ConsoleAppender">
@@ -73,12 +73,16 @@
         <discardingThreshold>0</discardingThreshold>
         <appender-ref ref="point_log"/>
     </appender>
+    <appender name="file_async" class="ch.qos.logback.classic.AsyncAppender">
+        <discardingThreshold>0</discardingThreshold>
+        <appender-ref ref="FileAppender"/>
+    </appender>
     <logger name="com.central.log.monitor" level="debug" addtivity="false">
         <appender-ref ref="point_log_async" />
     </logger>
 
     <root level="INFO">
         <appender-ref ref="StdoutAppender"/>
-        <appender-ref ref="FileAppender"/>
+        <appender-ref ref="file_async"/>
     </root>
 </configuration>
