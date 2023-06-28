@@ -1,8 +1,9 @@
 package com.central.oauth.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.central.common.constant.CommonConstant;
+import com.central.common.context.LoginUserContextHolder;
 import com.central.common.lock.DistributedLock;
 import com.central.common.redis.template.RedisRepository;
 import com.central.common.constant.SecurityConstants;
@@ -23,11 +24,14 @@ import java.util.Map;
 
 /**
  * @author zlt
+ * <p>
+ * Blog: https://zlt2000.gitee.io
+ * Github: https://github.com/zlt2000
  */
 @Slf4j
 @Service
 public class ClientServiceImpl extends SuperServiceImpl<ClientMapper, Client> implements IClientService {
-    private final static String LOCK_KEY_CLIENTID = CommonConstant.LOCK_KEY_PREFIX+"clientId:";
+    private final static String LOCK_KEY_CLIENTID = "clientId:";
 
     @Autowired
     private RedisRepository redisRepository;
@@ -39,9 +43,12 @@ public class ClientServiceImpl extends SuperServiceImpl<ClientMapper, Client> im
     private DistributedLock lock;
 
     @Override
-    public Result saveClient(Client client) {
+    public Result saveClient(Client client) throws Exception {
         client.setClientSecret(passwordEncoder.encode(client.getClientSecretStr()));
         String clientId = client.getClientId();
+        if (client.getId() == null) {
+            client.setCreatorId(LoginUserContextHolder.getUser().getId());
+        }
         super.saveOrUpdateIdempotency(client, lock
                 , LOCK_KEY_CLIENTID+clientId
                 , new QueryWrapper<Client>().eq("client_id", clientId)
@@ -50,7 +57,7 @@ public class ClientServiceImpl extends SuperServiceImpl<ClientMapper, Client> im
     }
 
     @Override
-    public PageResult<Client> listClent(Map<String, Object> params, boolean isPage) {
+    public PageResult<Client> listClient(Map<String, Object> params, boolean isPage) {
         Page<Client> page;
         if (isPage) {
             page = new Page<>(MapUtils.getInteger(params, "page"), MapUtils.getInteger(params, "limit"));
@@ -67,6 +74,13 @@ public class ClientServiceImpl extends SuperServiceImpl<ClientMapper, Client> im
         String clientId = baseMapper.selectById(id).getClientId();
         baseMapper.deleteById(id);
         redisRepository.del(clientRedisKey(clientId));
+    }
+
+    @Override
+    public Client loadClientByClientId(String clientId) {
+        QueryWrapper<Client> wrapper = Wrappers.query();
+        wrapper.eq("client_id", clientId);
+        return this.getOne(wrapper);
     }
 
     private String clientRedisKey(String clientId) {

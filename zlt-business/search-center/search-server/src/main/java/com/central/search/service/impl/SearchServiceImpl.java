@@ -1,14 +1,15 @@
 package com.central.search.service.impl;
 
-import com.alibaba.fastjson.JSONObject;
 import com.central.common.model.PageResult;
+import com.central.es.utils.SearchBuilder;
 import com.central.search.model.SearchDto;
 import com.central.search.service.ISearchService;
-import com.central.search.util.SearchBuilder;
+import com.fasterxml.jackson.databind.JsonNode;
+import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.search.sort.SortOrder;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.elasticsearch.core.ElasticsearchTemplate;
 import org.springframework.stereotype.Service;
+
+import java.io.IOException;
 
 /**
  * 通用搜索
@@ -18,8 +19,11 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class SearchServiceImpl implements ISearchService {
-    @Autowired
-    private ElasticsearchTemplate elasticsearchTemplate;
+    private final RestHighLevelClient client;
+
+    public SearchServiceImpl(RestHighLevelClient client) {
+        this.client = client;
+    }
 
     /**
      * StringQuery通用搜索
@@ -28,10 +32,10 @@ public class SearchServiceImpl implements ISearchService {
      * @return
      */
     @Override
-    public PageResult<JSONObject> strQuery(String indexName, SearchDto searchDto) {
-        return SearchBuilder.builder(elasticsearchTemplate, indexName)
+    public PageResult<JsonNode> strQuery(String indexName, SearchDto searchDto) throws IOException {
+        return SearchBuilder.builder(client, indexName)
                 .setStringQuery(searchDto.getQueryStr())
-                .addSort(searchDto.getSortCol(), SortOrder.DESC)
+                .addSort(searchDto.getSortCol(), searchDto.getSortOrder())
                 .setIsHighlight(searchDto.getIsHighlighter())
                 .getPage(searchDto.getPage(), searchDto.getLimit());
     }

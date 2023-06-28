@@ -75,7 +75,7 @@ spring:
             - StripPrefix=1
 #    sentinel:
 #      datasource.ds1.nacos:
-#        server-addr: ${zlt.nacos.server-addr}
+#        server-addr: ${spring.cloud.nacos.server-addr}
 #        data-id: ${spring.application.name}-sentinel-gw-flow
 #        group-id: DEFAULT_GROUP
 #        ruleType: gw-flow
@@ -98,9 +98,9 @@ zlt:
         /api-uaa/css/**,
         /api-uaa/images/**,
         /api-uaa/js/**,
-        /api-user/users-anon/**,
         /login.html,
-        /user/login
+        /user/login,
+        /api-uaa/tokens/key
     auth:
       urlPermission:
         #是否开启url级别权限

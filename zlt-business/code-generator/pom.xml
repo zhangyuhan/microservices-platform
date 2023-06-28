@@ -4,7 +4,7 @@
     <parent>
         <groupId>com.zlt</groupId>
         <artifactId>zlt-business</artifactId>
-        <version>3.0.0</version>
+        <version>5.6.0</version>
     </parent>
     <artifactId>code-generator</artifactId>
 
@@ -12,6 +12,10 @@
         <dependency>
             <groupId>com.zlt</groupId>
             <artifactId>zlt-config</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.zlt</groupId>
+            <artifactId>zlt-log-spring-boot-starter</artifactId>
         </dependency>
         <dependency>
             <groupId>com.zlt</groupId>
@@ -51,13 +55,17 @@
             <artifactId>velocity</artifactId>
         </dependency>
         <dependency>
-            <groupId>commons-configuration</groupId>
-            <artifactId>commons-configuration</artifactId>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-configuration2</artifactId>
         </dependency>
 
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>commons-configuration</groupId>
+            <artifactId>commons-configuration</artifactId>
         </dependency>
     </dependencies>
 

@@ -3,9 +3,9 @@ package com.central.gateway.route;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.cloud.nacos.NacosConfigProperties;
-import com.alibaba.fastjson.JSONObject;
 import com.alibaba.nacos.api.config.listener.Listener;
 import com.alibaba.nacos.api.exception.NacosException;
+import com.central.common.utils.JsonUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.event.RefreshRoutesEvent;
 import org.springframework.cloud.gateway.route.RouteDefinition;
@@ -24,7 +24,7 @@ import java.util.concurrent.Executor;
  * @author zlt
  * @date 2019/10/7
  * <p>
- * Blog: https://blog.csdn.net/zlt2000
+ * Blog: https://zlt2000.gitee.io
  * Github: https://github.com/zlt2000
  */
 @Slf4j
@@ -87,7 +87,7 @@ public class NacosRouteDefinitionRepository implements RouteDefinitionRepository
 
     private List<RouteDefinition> getListByStr(String content) {
         if (StrUtil.isNotEmpty(content)) {
-            return JSONObject.parseArray(content, RouteDefinition.class);
+            return JsonUtil.toList(content, RouteDefinition.class);
         }
         return new ArrayList<>(0);
     }

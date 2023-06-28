@@ -1,6 +1,7 @@
 package com.central.oauth.service.impl;
 
 import cn.hutool.core.util.RandomUtil;
+import cn.hutool.core.util.StrUtil;
 import com.central.common.feign.UserService;
 import com.central.common.redis.template.RedisRepository;
 import com.central.common.constant.SecurityConstants;
@@ -9,18 +10,17 @@ import com.central.common.model.SysUser;
 import com.central.oauth.exception.ValidateCodeException;
 import com.central.oauth.service.IValidateCodeService;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.web.bind.ServletRequestBindingException;
-import org.springframework.web.bind.ServletRequestUtils;
 
 import javax.annotation.Resource;
-import javax.servlet.http.HttpServletRequest;
 
 /**
  * @author zlt
  * @date 2018/12/10
+ * <p>
+ * Blog: https://zlt2000.gitee.io
+ * Github: https://github.com/zlt2000
  */
 @Slf4j
 @Service
@@ -95,19 +95,12 @@ public class ValidateCodeServiceImpl implements IValidateCodeService {
      * 验证验证码
      */
     @Override
-    public void validate(HttpServletRequest request) {
-        String deviceId = request.getParameter("deviceId");
-        if (StringUtils.isBlank(deviceId)) {
+    public void validate(String deviceId, String validCode) {
+        if (StrUtil.isBlank(deviceId)) {
             throw new ValidateCodeException("请在请求参数中携带deviceId参数");
         }
         String code = this.getCode(deviceId);
-        String codeInRequest;
-        try {
-            codeInRequest = ServletRequestUtils.getStringParameter(request, "validCode");
-        } catch (ServletRequestBindingException e) {
-            throw new ValidateCodeException("获取验证码的值失败");
-        }
-        if (StringUtils.isBlank(codeInRequest)) {
+        if (StrUtil.isBlank(validCode)) {
             throw new ValidateCodeException("请填写验证码");
         }
 
@@ -115,7 +108,7 @@ public class ValidateCodeServiceImpl implements IValidateCodeService {
             throw new ValidateCodeException("验证码不存在或已过期");
         }
 
-        if (!StringUtils.equals(code, codeInRequest.toLowerCase())) {
+        if (!StrUtil.equals(code, validCode.toLowerCase())) {
             throw new ValidateCodeException("验证码不正确");
         }
 

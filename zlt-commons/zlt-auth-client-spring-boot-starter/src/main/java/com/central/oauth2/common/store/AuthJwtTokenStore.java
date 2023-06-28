@@ -2,8 +2,11 @@ package com.central.oauth2.common.store;
 
 import com.central.common.model.SysUser;
 import com.central.oauth2.common.converter.CustomUserAuthenticationConverter;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.cloud.bootstrap.encrypt.KeyProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.oauth2.common.DefaultOAuth2AccessToken;
 import org.springframework.security.oauth2.provider.token.DefaultAccessTokenConverter;
 import org.springframework.security.oauth2.provider.token.TokenEnhancer;
@@ -22,15 +25,14 @@ import java.util.Map;
  *
  * @author zlt
  * @date 2018/7/24 16:21
+ * <p>
+ * Blog: https://zlt2000.gitee.io
+ * Github: https://github.com/zlt2000
  */
+@Configuration
+@ConditionalOnProperty(prefix = "zlt.oauth2.token.store", name = "type", havingValue = "authJwt")
 public class AuthJwtTokenStore {
-
-    @Bean("keyProp")
-    public KeyProperties keyProperties() {
-        return new KeyProperties();
-    }
-
-    @Resource(name = "keyProp")
+    @Resource
     private KeyProperties keyProperties;
 
     @Bean
@@ -39,6 +41,7 @@ public class AuthJwtTokenStore {
     }
 
     @Bean
+    @Order(2)
     public JwtAccessTokenConverter jwtAccessTokenConverter() {
         final JwtAccessTokenConverter converter = new JwtAccessTokenConverter();
         KeyPair keyPair = new KeyStoreKeyFactory
@@ -48,26 +51,5 @@ public class AuthJwtTokenStore {
         DefaultAccessTokenConverter tokenConverter = (DefaultAccessTokenConverter)converter.getAccessTokenConverter();
         tokenConverter.setUserTokenConverter(new CustomUserAuthenticationConverter());
         return converter;
-    }
-
-    /**
-     * jwt 生成token 定制化处理
-     * 添加一些额外的用户信息到token里面
-     *
-     * @return TokenEnhancer
-     */
-    @Bean
-    public TokenEnhancer tokenEnhancer() {
-        return (accessToken, authentication) -> {
-            final Map<String, Object> additionalInfo = new HashMap<>(1);
-            Object principal = authentication.getPrincipal();
-            //增加id参数
-            if (principal instanceof SysUser) {
-                SysUser user = (SysUser)principal;
-                additionalInfo.put("id", user.getId());
-            }
-            ((DefaultOAuth2AccessToken) accessToken).setAdditionalInformation(additionalInfo);
-            return accessToken;
-        };
     }
 }

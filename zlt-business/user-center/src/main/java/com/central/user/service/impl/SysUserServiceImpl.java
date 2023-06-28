@@ -7,6 +7,7 @@ import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.central.common.constant.CommonConstant;
+import com.central.common.context.LoginUserContextHolder;
 import com.central.common.lock.DistributedLock;
 import com.central.common.model.*;
 import com.central.common.service.impl.SuperServiceImpl;
@@ -37,7 +38,7 @@ import javax.annotation.Resource;
 @Slf4j
 @Service
 public class SysUserServiceImpl extends SuperServiceImpl<SysUserMapper, SysUser> implements ISysUserService {
-    private final static String LOCK_KEY_USERNAME = CommonConstant.LOCK_KEY_PREFIX+"username:";
+    private final static String LOCK_KEY_USERNAME = "username:";
 
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -80,10 +81,10 @@ public class SysUserServiceImpl extends SuperServiceImpl<SysUserMapper, SysUser>
             loginAppUser.setRoles(sysRoles);
 
             if (!CollectionUtils.isEmpty(sysRoles)) {
-                Set<Long> roleIds = sysRoles.parallelStream().map(SuperEntity::getId).collect(Collectors.toSet());
+                Set<Long> roleIds = sysRoles.stream().map(SuperEntity::getId).collect(Collectors.toSet());
                 List<SysMenu> menus = roleMenuMapper.findMenusByRoleIds(roleIds, CommonConstant.PERMISSION);
                 if (!CollectionUtils.isEmpty(menus)) {
-                    Set<String> permissions = menus.parallelStream().map(p -> p.getPath())
+                    Set<String> permissions = menus.stream().map(p -> p.getPath())
                             .collect(Collectors.toSet());
                     // 设置权限集合
                     loginAppUser.setPermissions(permissions);
@@ -219,13 +220,14 @@ public class SysUserServiceImpl extends SuperServiceImpl<SysUserMapper, SysUser>
 
     @Transactional(rollbackFor = Exception.class)
     @Override
-    public Result saveOrUpdateUser(SysUser sysUser) {
+    public Result saveOrUpdateUser(SysUser sysUser) throws Exception {
         if (sysUser.getId() == null) {
             if (StringUtils.isBlank(sysUser.getType())) {
                 sysUser.setType(UserType.BACKEND.name());
             }
             sysUser.setPassword(passwordEncoder.encode(CommonConstant.DEF_USER_PASSWORD));
             sysUser.setEnabled(Boolean.TRUE);
+            sysUser.setCreatorId(LoginUserContextHolder.getUser().getId());
         }
         String username = sysUser.getUsername();
         boolean result = super.saveOrUpdateIdempotency(sysUser, lock

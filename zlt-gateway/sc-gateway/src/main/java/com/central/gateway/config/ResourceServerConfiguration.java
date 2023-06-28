@@ -21,7 +21,7 @@ import org.springframework.security.web.server.authentication.ServerAuthenticati
  * @author zlt
  * @date 2019/10/5
  * <p>
- * Blog: https://blog.csdn.net/zlt2000
+ * Blog: https://zlt2000.gitee.io
  * Github: https://github.com/zlt2000
  */
 @Configuration
@@ -48,6 +48,7 @@ public class ResourceServerConfiguration {
         oauth2Filter.setServerAuthenticationConverter(tokenAuthenticationConverter);
         oauth2Filter.setAuthenticationFailureHandler(new ServerAuthenticationEntryPointFailureHandler(entryPoint));
         oauth2Filter.setAuthenticationSuccessHandler(new Oauth2AuthSuccessHandler());
+        oauth2Filter.setRequiresAuthenticationMatcher(new CustomServerWebExchangeMatchers(securityProperties));
         http.addFilterAt(oauth2Filter, SecurityWebFiltersOrder.AUTHENTICATION);
 
         ServerHttpSecurity.AuthorizeExchangeSpec authorizeExchange = http.authorizeExchange();

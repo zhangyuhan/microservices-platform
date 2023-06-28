@@ -1,147 +1,119 @@
 package com.central.admin.service.impl;
 
 import cn.hutool.core.util.StrUtil;
-import com.alibaba.fastjson.JSONObject;
-import com.carrotsearch.hppc.cursors.ObjectCursor;
 import com.central.admin.model.IndexDto;
-import com.central.admin.model.IndexVo;
 import com.central.admin.service.IIndexService;
 import com.central.common.model.PageResult;
-import org.elasticsearch.action.admin.indices.create.CreateIndexRequestBuilder;
-import org.elasticsearch.action.admin.indices.stats.IndexStats;
-import org.elasticsearch.action.admin.indices.stats.IndicesStatsRequestBuilder;
-import org.elasticsearch.action.admin.indices.stats.IndicesStatsResponse;
-import org.elasticsearch.cluster.metadata.AliasMetaData;
-import org.elasticsearch.cluster.metadata.IndexMetaData;
-import org.elasticsearch.cluster.metadata.MappingMetaData;
-import org.elasticsearch.common.collect.ImmutableOpenMap;
+import com.central.common.utils.JsonUtil;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.http.util.EntityUtils;
+import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.client.indices.CreateIndexRequest;
+import org.elasticsearch.client.indices.CreateIndexResponse;
+import org.elasticsearch.client.indices.GetIndexRequest;
+import org.elasticsearch.client.indices.GetIndexResponse;
+import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest;
+import org.elasticsearch.action.support.master.AcknowledgedResponse;
+import org.elasticsearch.client.Request;
+import org.elasticsearch.client.RequestOptions;
+import org.elasticsearch.client.Response;
+import org.elasticsearch.cluster.metadata.AliasMetadata;
+import org.elasticsearch.cluster.metadata.MappingMetadata;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentType;
-import org.elasticsearch.index.IndexNotFoundException;
-import org.elasticsearch.index.search.stats.SearchStats;
-import org.elasticsearch.index.shard.DocsStats;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.elasticsearch.core.ElasticsearchTemplate;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.io.IOException;
+import java.util.*;
 
 /**
  * 索引
  *
  * @author zlt
  * @date 2019/4/23
+ * <p>
+ * Blog: https://zlt2000.gitee.io
+ * Github: https://github.com/zlt2000
  */
 @Service
 public class IndexServiceImpl implements IIndexService {
-    @Autowired
-    private ElasticsearchTemplate elasticsearchTemplate;
+    private ObjectMapper mapper = new ObjectMapper();
+
+    private final RestHighLevelClient client;
+
+    public IndexServiceImpl(RestHighLevelClient client) {
+        this.client = client;
+    }
 
     @Override
-    public void create(IndexDto indexDto) {
-        // setting
-        Settings settings = Settings.builder()
+    public boolean create(IndexDto indexDto) throws IOException {
+        CreateIndexRequest request = new CreateIndexRequest(indexDto.getIndexName());
+        request.settings(Settings.builder()
                 .put("index.number_of_shards", indexDto.getNumberOfShards())
                 .put("index.number_of_replicas", indexDto.getNumberOfReplicas())
-                .build();
-        CreateIndexRequestBuilder builder = elasticsearchTemplate.getClient().admin()
-                .indices()
-                .prepareCreate(indexDto.getIndexName())
-                .setSettings(settings);
-        if (StrUtil.isNotEmpty(indexDto.getType()) && StrUtil.isNotEmpty(indexDto.getMappingsSource())) {
+        );
+        if (StrUtil.isNotEmpty(indexDto.getMappingsSource())) {
             //mappings
-            builder.addMapping(indexDto.getType(), indexDto.getMappingsSource(), XContentType.JSON);
+            request.mapping(indexDto.getMappingsSource(), XContentType.JSON);
         }
-        builder.get();
+        CreateIndexResponse response = client
+                .indices()
+                .create(request, RequestOptions.DEFAULT);
+        return response.isAcknowledged();
     }
 
     @Override
-    public void delete(String indexName) {
-        elasticsearchTemplate.getClient().admin().indices()
-                .prepareDelete(indexName)
-                .execute().actionGet();
+    public boolean delete(String indexName) throws IOException {
+        DeleteIndexRequest request = new DeleteIndexRequest(indexName);
+        AcknowledgedResponse response = client.indices().delete(request, RequestOptions.DEFAULT);
+        return response.isAcknowledged();
     }
 
     @Override
-    public PageResult<IndexVo> list(String queryStr, String... indices) {
-        IndicesStatsRequestBuilder indicesBuilder = elasticsearchTemplate.getClient().admin().indices()
-                .prepareStats(indices);
+    public PageResult<Map<String, String>> list(String queryStr, String indices) throws IOException {
         if (StrUtil.isNotEmpty(queryStr)) {
-            indicesBuilder.setIndices(queryStr);
+            indices = queryStr;
         }
-        List<IndexVo> indexList = new ArrayList<>();
-        try {
-            IndicesStatsResponse response = indicesBuilder.execute().actionGet();
-            Map<String, IndexStats> indicesMap = response.getIndices();
-            for(IndexStats stat : indicesMap.values()) {
-                IndexVo vo = new IndexVo();
-                vo.setIndexName(stat.getIndex());
-                //获取文档数据
-                DocsStats docsStats = stat.getTotal().getDocs();
-                vo.setDocsCount(docsStats.getCount());
-                vo.setDocsDeleted(docsStats.getDeleted());
-                //获取存储数据
-                vo.setStoreSizeInBytes(getKB(stat.getTotal().getStore().getSizeInBytes()));
-                //获取查询数据
-                SearchStats.Stats searchStats = stat.getTotal().getSearch().getTotal();
-                vo.setQueryCount(searchStats.getQueryCount());
-                vo.setQueryTimeInMillis(searchStats.getQueryTimeInMillis() / 1000D);
+        Response response = client.getLowLevelClient()
+                .performRequest(new Request(
+                        "GET",
+                        "/_cat/indices?h=health,status,index,docsCount,docsDeleted,storeSize&s=cds:desc&format=json&index="+StrUtil.nullToEmpty(indices)
+                ));
 
-                indexList.add(vo);
-            }
-        } catch (IndexNotFoundException e) {}
-        return PageResult.<IndexVo>builder().data(indexList).code(0).build();
-    }
-
-    /**
-     * bytes 转换为 kb
-     */
-    private Double getKB(Long bytes) {
-        if (bytes == null) {
-            return 0D;
+        List<Map<String, String>> listOfIndicesFromEs = null;
+        if (response != null) {
+            String rawBody = EntityUtils.toString(response.getEntity());
+            TypeReference<List<Map<String, String>>> typeRef = new TypeReference<List<Map<String, String>>>() {};
+            listOfIndicesFromEs = mapper.readValue(rawBody, typeRef);
         }
-        return bytes / 1024D;
+        return PageResult.<Map<String, String>>builder().data(listOfIndicesFromEs).code(0).build();
     }
 
     @Override
-    public Map<String, Object> show(String indexName) {
-        ImmutableOpenMap<String, IndexMetaData>  stat = elasticsearchTemplate.getClient().admin().cluster()
-                .prepareState().setIndices(indexName).execute().actionGet()
-                .getState()
-                .getMetaData()
-                .getIndices();
+    public Map<String, Object> show(String indexName) throws IOException {
+        GetIndexRequest request = new GetIndexRequest(indexName);
+        GetIndexResponse getIndexResponse = client
+                .indices().get(request, RequestOptions.DEFAULT);
+        MappingMetadata mappingMetadata = getIndexResponse.getMappings().get(indexName);
+        Map<String, Object> mappOpenMap = mappingMetadata.getSourceAsMap();
+        List<AliasMetadata> indexAliases = getIndexResponse.getAliases().get(indexName);
 
-        IndexMetaData indexMetaData = stat.get(indexName);
-        //获取settings数据
-        String settingsStr = indexMetaData.getSettings().toString();
+        String settingsStr = getIndexResponse.getSettings().get(indexName).toString();
         Object settingsObj = null;
         if (StrUtil.isNotEmpty(settingsStr)) {
-            settingsObj = JSONObject.parse(settingsStr);
+            settingsObj = JsonUtil.parse(settingsStr);
         }
-
-        ImmutableOpenMap<String, MappingMetaData> mappOpenMap = indexMetaData.getMappings();
-        ImmutableOpenMap<String, AliasMetaData> aliasesOpenMap = indexMetaData.getAliases();
         Map<String, Object> result = new HashMap<>(1);
         Map<String, Object> indexMap = new HashMap<>(3);
-        Map<String, Object> mappMap = new HashMap<>(mappOpenMap.size());
-        Map<String, Object> aliasesMap = new HashMap<>(aliasesOpenMap.size());
-        indexMap.put("aliases", aliasesMap);
+        List<String> aliasesList = new ArrayList<>(indexAliases.size());
+        indexMap.put("aliases", aliasesList);
         indexMap.put("settings", settingsObj);
-        indexMap.put("mappings", mappMap);
+        indexMap.put("mappings", mappOpenMap);
         result.put(indexName, indexMap);
-        //获取mappings数据
-        for (ObjectCursor<String> key : mappOpenMap.keys()) {
-            MappingMetaData data = mappOpenMap.get(key.value);
-            Map<String, Object> dataMap = data.getSourceAsMap();
-            mappMap.put(key.value, dataMap);
-        }
         //获取aliases数据
-        for (ObjectCursor<String> key : aliasesOpenMap.keys()) {
-            AliasMetaData data = aliasesOpenMap.get(key.value);
-            aliasesMap.put(key.value, data.alias());
+        for (AliasMetadata aliases : indexAliases) {
+            aliasesList.add(aliases.getAlias());
         }
         return result;
     }

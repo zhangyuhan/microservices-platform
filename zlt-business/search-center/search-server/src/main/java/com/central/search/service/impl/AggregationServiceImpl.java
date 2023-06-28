@@ -1,24 +1,28 @@
 package com.central.search.service.impl;
 
+import cn.hutool.core.util.StrUtil;
 import com.central.common.constant.CommonConstant;
 import com.central.search.model.AggItemVo;
 import com.central.search.service.IAggregationService;
+import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.client.RequestOptions;
+import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.aggregations.Aggregations;
-import org.elasticsearch.search.aggregations.bucket.histogram.DateHistogramInterval;
-import org.elasticsearch.search.aggregations.bucket.histogram.ExtendedBounds;
-import org.elasticsearch.search.aggregations.bucket.histogram.InternalDateHistogram;
-import org.elasticsearch.search.aggregations.bucket.range.InternalDateRange;
+import org.elasticsearch.search.aggregations.bucket.histogram.*;
+import org.elasticsearch.search.aggregations.bucket.range.ParsedDateRange;
+import org.elasticsearch.search.aggregations.bucket.range.Range;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms;
-import org.elasticsearch.search.aggregations.metrics.cardinality.Cardinality;
-import org.joda.time.DateTime;
-import org.joda.time.DateTimeZone;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.elasticsearch.core.ElasticsearchTemplate;
+import org.elasticsearch.search.aggregations.metrics.ParsedCardinality;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -30,11 +34,17 @@ import java.util.Map;
  *
  * @author zlt
  * @date 2019/5/7
+ * <p>
+ * Blog: https://zlt2000.gitee.io
+ * Github: https://github.com/zlt2000
  */
 @Service
 public class AggregationServiceImpl implements IAggregationService {
-    @Autowired
-    private ElasticsearchTemplate elasticsearchTemplate;
+    private final RestHighLevelClient client;
+
+    public AggregationServiceImpl(RestHighLevelClient client) {
+        this.client = client;
+    }
 
     /**
      * 访问统计聚合查询，需要es里面提供以下结构的数据
@@ -104,91 +114,116 @@ public class AggregationServiceImpl implements IAggregationService {
      * }
      */
     @Override
-    public Map<String, Object> requestStatAgg(String indexName, String routing) {
-        DateTime currDt = DateTime.now();
+    public Map<String, Object> requestStatAgg(String indexName, String routing) throws IOException {
+        ZonedDateTime zonedDateTime = ZonedDateTime.now();
         LocalDate localDate = LocalDate.now();
-        SearchResponse response = elasticsearchTemplate.getClient().prepareSearch(indexName)
-                .setRouting(routing)
-                .addAggregation(
-                        //聚合查询当天的数据
-                        AggregationBuilders
-                                .dateRange("currDate")
-                                .field("timestamp")
-                                .addRange(
-                                        currDt.withHourOfDay(0).withMinuteOfHour(0).withSecondOfMinute(0).withMillisOfSecond(0), currDt
-                                )
-                                .subAggregation(
-                                        AggregationBuilders
-                                                .cardinality("uv")
-                                                .field("ip.keyword")
-                                )
-                )
-                .addAggregation(
-                        //聚合查询7天内的数据
-                        AggregationBuilders
-                                .dateRange("currWeek")
-                                .field("timestamp")
-                                .addRange(currDt.minusDays(7), currDt)
-                                .subAggregation(
-                                        //聚合并且按日期分组查询7天内的数据
-                                        AggregationBuilders
-                                                .dateHistogram("statWeek")
-                                                .field("timestamp")
-                                                .dateHistogramInterval(DateHistogramInterval.DAY)
-                                                .format(CommonConstant.DATE_FORMAT)
-                                                //时区相差8小时
-                                                .timeZone(DateTimeZone.forOffsetHours(8))
-                                                .minDocCount(0L)
-                                                .extendedBounds(new ExtendedBounds(
-                                                        localDate.minusDays(6).format(DateTimeFormatter.ofPattern(CommonConstant.DATE_FORMAT)),
-                                                        localDate.format(DateTimeFormatter.ofPattern(CommonConstant.DATE_FORMAT))
-                                                ))
-                                                .subAggregation(
-                                                        AggregationBuilders
-                                                                .cardinality("uv")
-                                                                .field("ip.keyword")
-                                                )
-                                )
-                )
-                .addAggregation(
-                        //聚合查询30天内的数据
-                        AggregationBuilders
-                                .dateRange("currMonth")
-                                .field("timestamp")
-                                .addRange(currDt.minusDays(30), currDt)
-                )
-                .addAggregation(
-                        //聚合查询浏览器的数据
-                        AggregationBuilders
-                                .terms("browser")
-                                .field("browser.keyword")
-                )
-                .addAggregation(
-                        //聚合查询操作系统的数据
-                        AggregationBuilders
-                                .terms("operatingSystem")
-                                .field("operatingSystem.keyword")
-                )
-                .addAggregation(
-                        //聚合查询1小时内的数据
-                        AggregationBuilders
-                                .dateRange("currHour")
-                                .field("timestamp")
-                                .addRange(
-                                        currDt.minusHours(1), currDt
-                                )
-                                .subAggregation(
-                                        AggregationBuilders
-                                                .cardinality("uv")
-                                                .field("ip.keyword")
-                                )
-                )
-                .setSize(0)
-                .get();
+        LocalDateTime curDateTime = LocalDateTime.now();
+
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        SearchRequest searchRequest = new SearchRequest(indexName);
+        searchRequest.source(searchSourceBuilder).routing(routing);
+        searchSourceBuilder.aggregation(
+            //聚合查询当天的数据
+            AggregationBuilders
+                    .dateRange("currDate")
+                    .field("timestamp")
+                    .addRange(
+                            zonedDateTime.withHour(0).withMinute(0).withSecond(0).withNano(0), zonedDateTime.plusDays(1)
+                    )
+                    .subAggregation(
+                            AggregationBuilders
+                                    .cardinality("uv")
+                                    .field("ip.keyword")
+                    )
+        ).aggregation(
+            //聚合查询7天内的数据
+            AggregationBuilders
+                    .dateRange("curr24Hour")
+                    .field("timestamp")
+                    .addRange(zonedDateTime.minusDays(1), zonedDateTime)
+                    .subAggregation(
+                            //聚合并且按小时分组查询当天内的数据
+                            AggregationBuilders
+                                    .dateHistogram("statDate")
+                                    .field("timestamp")
+                                    .fixedInterval(new DateHistogramInterval("90m"))
+                                    .format(CommonConstant.DATETIME_FORMAT)
+                                    //时区相差8小时
+                                    .timeZone(ZoneId.of(CommonConstant.TIME_ZONE_GMT8))
+                                    .minDocCount(0L)
+                                    .extendedBounds(new LongBounds(
+                                            curDateTime.minusDays(1).format(DateTimeFormatter.ofPattern(CommonConstant.DATETIME_FORMAT)),
+                                            curDateTime.format(DateTimeFormatter.ofPattern(CommonConstant.DATETIME_FORMAT))
+                                    ))
+                                    .subAggregation(
+                                            AggregationBuilders
+                                                    .cardinality("uv")
+                                                    .field("ip.keyword")
+                                    )
+                    )
+        ).aggregation(
+            //聚合查询7天内的数据
+            AggregationBuilders
+                    .dateRange("currWeek")
+                    .field("timestamp")
+                    .addRange(zonedDateTime.minusDays(7), zonedDateTime)
+                    .subAggregation(
+                            //聚合并且按日期分组查询7天内的数据
+                            AggregationBuilders
+                                    .dateHistogram("statWeek")
+                                    .field("timestamp")
+                                    .calendarInterval(DateHistogramInterval.DAY)
+                                    .format(CommonConstant.DATE_FORMAT)
+                                    //时区相差8小时
+                                    .timeZone(ZoneId.of(CommonConstant.TIME_ZONE_GMT8))
+                                    .minDocCount(0L)
+                                    .extendedBounds(new LongBounds(
+                                            localDate.minusDays(6).format(DateTimeFormatter.ofPattern(CommonConstant.DATE_FORMAT)),
+                                            localDate.format(DateTimeFormatter.ofPattern(CommonConstant.DATE_FORMAT))
+                                    ))
+                                    .subAggregation(
+                                            AggregationBuilders
+                                                    .cardinality("uv")
+                                                    .field("ip.keyword")
+                                    )
+                    )
+        ).aggregation(
+            //聚合查询30天内的数据
+            AggregationBuilders
+                    .dateRange("currMonth")
+                    .field("timestamp")
+                    .addRange(zonedDateTime.minusDays(30), zonedDateTime)
+        ).aggregation(
+            //聚合查询浏览器的数据
+            AggregationBuilders
+                    .terms("browser")
+                    .field("browser.keyword")
+        ).aggregation(
+            //聚合查询操作系统的数据
+            AggregationBuilders
+                    .terms("operatingSystem")
+                    .field("operatingSystem.keyword")
+        ).aggregation(
+            //聚合查询1小时内的数据
+            AggregationBuilders
+                    .dateRange("currHour")
+                    .field("timestamp")
+                    .addRange(
+                            zonedDateTime.minusHours(1), zonedDateTime
+                    )
+                    .subAggregation(
+                            AggregationBuilders
+                                    .cardinality("uv")
+                                    .field("ip.keyword")
+                    )
+        ).size(0);
+
+        SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
         Aggregations aggregations = response.getAggregations();
-        Map<String, Object> result = new HashMap<>(9);
+        Map<String, Object> result = new HashMap<>(15);
         if (aggregations != null) {
             setCurrDate(result, aggregations);
+            setCurr24Hour(result, aggregations);
             setCurrWeek(result, aggregations);
             setCurrMonth(result, aggregations);
             setTermsData(result, aggregations, "browser");
@@ -201,18 +236,27 @@ public class AggregationServiceImpl implements IAggregationService {
      * 赋值当天统计
      */
     private void setCurrDate(Map<String, Object> result, Aggregations aggregations) {
-        InternalDateRange currDate = aggregations.get("currDate");
-        InternalDateRange.Bucket bucket = currDate.getBuckets().get(0);
-        Cardinality cardinality = bucket.getAggregations().get("uv");
+        ParsedDateRange currDate = aggregations.get("currDate");
+        Range.Bucket bucket = currDate.getBuckets().get(0);
+        ParsedCardinality cardinality = bucket.getAggregations().get("uv");
         result.put("currDate_pv", bucket.getDocCount());
         result.put("currDate_uv", cardinality.getValue());
     }
     /**
      * 赋值周统计
      */
+    private void setCurr24Hour(Map<String, Object> result, Aggregations aggregations) {
+        ParsedDateRange curr24Hour = aggregations.get("curr24Hour");
+        Range.Bucket bucket = curr24Hour.getBuckets().get(0);
+        //赋值天趋势统计
+        setStatDate(result, bucket.getAggregations());
+    }
+    /**
+     * 赋值周统计
+     */
     private void setCurrWeek(Map<String, Object> result, Aggregations aggregations) {
-        InternalDateRange currWeek = aggregations.get("currWeek");
-        InternalDateRange.Bucket bucket = currWeek.getBuckets().get(0);
+        ParsedDateRange currWeek = aggregations.get("currWeek");
+        Range.Bucket bucket = currWeek.getBuckets().get(0);
         result.put("currWeek_pv", bucket.getDocCount());
         //赋值周趋势统计
         setStatWeek(result, bucket.getAggregations());
@@ -221,8 +265,8 @@ public class AggregationServiceImpl implements IAggregationService {
      * 赋值月统计
      */
     private void setCurrMonth(Map<String, Object> result, Aggregations aggregations) {
-        InternalDateRange currMonth = aggregations.get("currMonth");
-        InternalDateRange.Bucket bucket = currMonth.getBuckets().get(0);
+        ParsedDateRange currMonth = aggregations.get("currMonth");
+        Range.Bucket bucket = currMonth.getBuckets().get(0);
         result.put("currMonth_pv", bucket.getDocCount());
     }
     /**
@@ -246,12 +290,12 @@ public class AggregationServiceImpl implements IAggregationService {
      * 赋值周趋势统计
      */
     private void setStatWeek(Map<String, Object> result, Aggregations aggregations) {
-        InternalDateHistogram agg = aggregations.get("statWeek");
+        ParsedDateHistogram agg = aggregations.get("statWeek");
         List<String> items = new ArrayList<>();
         List<Long> uv = new ArrayList<>();
         List<Long> pv = new ArrayList<>();
-        Cardinality cardinality;
-        for (InternalDateHistogram.Bucket bucket : agg.getBuckets()) {
+        ParsedCardinality cardinality;
+        for (Histogram.Bucket bucket : agg.getBuckets()) {
             items.add(bucket.getKeyAsString());
             pv.add(bucket.getDocCount());
 
@@ -266,9 +310,40 @@ public class AggregationServiceImpl implements IAggregationService {
      * 赋值小时内统计-当前在线数
      */
     private void setCurrHour(Map<String, Object> result, Aggregations aggregations) {
-        InternalDateRange currDate = aggregations.get("currHour");
-        InternalDateRange.Bucket bucket = currDate.getBuckets().get(0);
-        Cardinality cardinality = bucket.getAggregations().get("uv");
+        ParsedDateRange currDate = aggregations.get("currHour");
+        Range.Bucket bucket = currDate.getBuckets().get(0);
+        ParsedCardinality cardinality = bucket.getAggregations().get("uv");
         result.put("currHour_uv", cardinality.getValue());
+    }
+    /**
+     * 赋值天趋势统计
+     */
+    private void setStatDate(Map<String, Object> result, Aggregations aggregations) {
+        ParsedDateHistogram agg = aggregations.get("statDate");
+        List<String> items = new ArrayList<>();
+        List<Long> uv = new ArrayList<>();
+        List<Long> pv = new ArrayList<>();
+        ParsedCardinality cardinality;
+        for (Histogram.Bucket bucket : agg.getBuckets()) {
+            items.add(getTimeByDatetimeStr(bucket.getKeyAsString()));
+            pv.add(bucket.getDocCount());
+
+            cardinality = bucket.getAggregations().get("uv");
+            uv.add(cardinality.getValue());
+        }
+        result.put("statDate_items", items);
+        result.put("statDate_uv", uv);
+        result.put("statDate_pv", pv);
+    }
+
+    /**
+     * 2020-03-10 01:30:00 获取时间值：03-10 01:30
+     * @return
+     */
+    private String getTimeByDatetimeStr(String datetimeStr) {
+        if (StrUtil.isNotEmpty(datetimeStr)) {
+            return datetimeStr.substring(5, 16);
+        }
+        return "";
     }
 }

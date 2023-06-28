@@ -7,15 +7,17 @@ import java.util.Map;
 import java.util.Set;
 
 import cn.hutool.core.bean.BeanUtil;
-import com.alibaba.fastjson.JSONObject;
+import cn.hutool.core.util.ObjectUtil;
 import com.central.common.annotation.LoginUser;
 import com.central.common.constant.CommonConstant;
 import com.central.common.model.*;
 import com.central.common.utils.ExcelUtil;
+import com.central.log.annotation.AuditLog;
 import com.central.search.client.service.IQueryService;
 import com.central.search.model.LogicDelDto;
 import com.central.search.model.SearchDto;
 import com.central.user.model.SysUserExcel;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.apache.commons.collections4.MapUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
@@ -118,7 +120,8 @@ public class SysUserController {
      * @param sysUser
      */
     @PutMapping("/users")
-    @CachePut(value = "user", key = "#sysUser.username")
+    @CachePut(value = "user", key = "#sysUser.username", unless="#result == null")
+    //@AuditLog(operation = "'更新用户:' + #sysUser")
     public void updateSysUser(@RequestBody SysUser sysUser) {
         appUserService.updateById(sysUser);
     }
@@ -187,6 +190,7 @@ public class SysUserController {
      * @param id
      */
     @PutMapping(value = "/users/{id}/password")
+    //@AuditLog(operation = "'重置用户密码:' + #id")
     public Result resetPassword(@PathVariable Long id) {
         if (checkAdmin(id)) {
             return Result.failed(ADMIN_CHANGE_MSG);
@@ -213,6 +217,7 @@ public class SysUserController {
      * @param id
      */
     @DeleteMapping(value = "/users/{id}")
+    //@AuditLog(operation = "'删除用户:' + #id")
     public Result delete(@PathVariable Long id) {
         if (checkAdmin(id)) {
             return Result.failed(ADMIN_CHANGE_MSG);
@@ -230,7 +235,8 @@ public class SysUserController {
      */
     @CacheEvict(value = "user", key = "#sysUser.username")
     @PostMapping("/users/saveOrUpdate")
-    public Result saveOrUpdate(@RequestBody SysUser sysUser) {
+    @AuditLog(operation = "'新增或更新用户:' + #sysUser.username")
+    public Result saveOrUpdate(@RequestBody SysUser sysUser) throws Exception {
         return appUserService.saveOrUpdateUser(sysUser);
     }
 
@@ -274,10 +280,27 @@ public class SysUserController {
             @ApiImplicitParam(name = "queryStr", value = "搜索关键字", dataType = "String")
     })
     @GetMapping("/users/search")
-    public PageResult<JSONObject> search(SearchDto searchDto) {
+    public PageResult<JsonNode> search(SearchDto searchDto) {
         searchDto.setIsHighlighter(true);
         searchDto.setSortCol("createTime");
         return queryService.strQuery("sys_user", searchDto, SEARCH_LOGIC_DEL_DTO);
+    }
+
+    /**
+     * 获取用户并返回角色列表
+     * @param username
+     * @return
+     */
+    @GetMapping(value = "/users/roleUser/{username}")
+    @ApiOperation(value = "查询用户-带角色信息")
+    @Cacheable(value = "userRoles", key = "#username")
+    public SysUser selectRoleUser(@PathVariable("username") String username){
+        SysUser sysUser = selectByUsername(username);
+        if(ObjectUtil.isNotNull(sysUser)){
+            List<SysRole> roleList = findRolesByUserId(sysUser.getId());
+            sysUser.setRoles(roleList);
+        }
+        return sysUser;
     }
 
     /**
